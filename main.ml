@@ -20,9 +20,6 @@ let result_list_to_result (lst: (('a, string) result list)) : ('a list, string) 
   else
     lst |> List.map Result.get_ok |> Result.ok
 
-let line_stream_of_channel channel =
-  Stream.from (fun _ -> try Some (input_line channel) with End_of_file -> None)
-
 let logerror str e = let _ = Log.error "%s" str in e
 
 let logerrormsg str e = let _ = Log.error "%s %s" str (Result.get_error e) in e
@@ -38,8 +35,6 @@ let iota start gap n =
   iota_ start n [] |> List.rev
 
 
-(* let inputfile = "input.mkv" |> Filename.quote *)
-
 type inputfile = { name:string; nsamples:int; sampleduration:int }
 type dstfile = { name:string; src:string; params:string }
 type score = { mean:float; min:float; max:float; variance:float; median: float }
@@ -52,11 +47,12 @@ type action =
   | MakeDst of dstfile (* Transcode source into a new file using one of the many parameters *)
   | ScoreDst of string (* Generate scores for the destination file specified *)
 
+(* Very stupid communication protocol, semicolon divided *)
 let parse_action buf =
   match String.split_on_char ';' buf with
   | "PARAMS"::fname::[] -> ComputeOriginalParams fname |> Option.some
-  | "MAKESRC"::src::inputs -> MakeSource (inputs, src) |> Option.some
-  | "MAKEDST"::dst::src::params::[] -> MakeDst { name=dst; src=src; params=params } |> Option.some
+  | "MAKESRC"::src::samples -> MakeSource (samples, src) |> Option.some
+  | "MAKEDST"::src::dst::params::[] -> MakeDst { name=dst; src=src; params=params } |> Option.some
   | "SCORE"::fname::[] -> ScoreDst fname |> Option.some
   | "SNAPSHOTS"::fname::nsamples::sampleduration::[] ->
      begin match (int_of_string_opt nsamples, int_of_string_opt sampleduration) with
@@ -98,7 +94,7 @@ let run cmd =
   in
   let ch, _, _ = prog
   in
-  let lines = line_stream_of_channel ch
+  let lines = Interop.line_stream_of_channel ch
   in
   let rec to_list stream acc =
     try (Stream.next stream)::acc |> to_list stream 
@@ -127,7 +123,6 @@ let duration inputfile =
   in
   let dur = run cmd |> Result.map (fun ls -> ls |> List.hd |> float_of_string |> div1000 |> Float.floor |> int_of_float)
   in
-  Log.debug "%s" ("Computed duration|"^(match dur with | Ok d ->  string_of_int d  | _ -> "error"));
   Result.bind dur (fun dur -> if dur >= minduration then Ok dur else Error "Video file lasts less than 120 seconds")
 
 let make_source_samples inputfile duration =
@@ -150,18 +145,15 @@ let make_source_samples inputfile duration =
       let gap = duration / (nsamples+2)
       in
       iota gap gap nsamples
-      |> fun samples -> let _ = Log.debug "function: compute_samples=%s" (List.map string_of_int samples |> String.concat ", " ) in samples
   in
   let extract_sample inputfile start =
-    Log.debug "function: extract_sample: %d" start;
     let start = string_of_int start
     in
     let filename = "original"^start^".mkv"
     in
     let cmd = "ffmpeg -y -ss "^start^" -t "^sampleduration_st^" -i "^inputfile^" "^filename
     in
-    run cmd
-    |> Result.map (fun _ -> let _ = loginfo "Extracted sample@%ss" start in filename)
+    run cmd |> Result.map (fun _ -> filename)
   in
   compute_samples duration inputfile.nsamples inputfile.sampleduration
   |> List.map (extract_sample inputfile.name)
@@ -169,7 +161,6 @@ let make_source_samples inputfile duration =
   
 
 let concat_video filenames destination =
-  let _ = Log.debug "function: concat_video" in
   let create_listtxt files =
     let fp = open_out "list.txt" in
     let _ = files |> List.iter (fun f -> Printf.fprintf fp "file %s\n" f) in close_out fp
@@ -182,10 +173,9 @@ let concat_video filenames destination =
   | Error _ -> Error "Can't concatenate source samples into a single file"
 
 let transcode_file src dst params =
-  let _ = Log.debug "Transcoding: %s" dst in
   let cmd = "ffmpeg -y -i "^src^" "^params^" "^dst
   in
-  let _ = Log.debug "Using: %s" cmd
+  let _ = Log.info "Transcoding %s using: %s" dst cmd
   in
   match run cmd with
   | Ok _ -> Ok dst
@@ -199,7 +189,7 @@ let score_files src files =
     in
     let cmd = "ffmpeg -i "^src^" -i "^file^" -lavfi ssim=stats_file="^score_logfile^" -f null -"
     in
-    let _ = Log.debug "Using: %s" cmd
+    let _ = Log.info "Computing score using: %s" cmd
     in
     match run cmd with
     | Ok _ -> Ok score_logfile
@@ -215,7 +205,7 @@ let compute_file_score logname =
       try (Stream.next stream)::acc |> to_list stream 
       with Stream.Failure -> let _ = close_in inch in acc
     in
-    let stream = inch |> line_stream_of_channel
+    let stream = inch |> Interop.line_stream_of_channel
     in
     to_list stream [] |> List.rev
   in
@@ -246,23 +236,8 @@ let compute_file_score logname =
   
   
 
-let () =
-  Log.set_log_level Log.INFO;
-  Log.color_on();
-  Log.set_output stdout
-
-  (* let duration = duration () *)
-  (* in *)
-  (* let source = Result.map make_source_samples duration |> Result.join *)
-  (* in *)
-  (* let dst_files = Result.bind source (fun src -> default_parameters |> transcode_files src) in *)
-  (* let _score_files = Result.bind dst_files (score_files (Result.get_ok source)) *)
-  (* in *)
-  (* match source with *)
-  (* | Ok source -> Printf.printf "%s " source *)
-  (* | e -> let _ = logerrormsg "" e in () *)
 let hashof filename =
-  let cmd = "md5sum "^filename in
+  let cmd = "md5sum "^filename^" | cut -f1 -d ' '" in
   run cmd |> Result.map List.hd
 let assoc_hash file = hashof file |> Result.map (fun hash -> (file, hash))
 
@@ -300,43 +275,15 @@ let handle_action = function
      | Ok ffmpeg_result -> assoc_hash logfile |> Result.map (fun t -> ScoreDst (fst t, snd t, ffmpeg_result))
      | Error exn -> Printexc.to_string exn |> Result.error
 
-open Unix
-
-type requestmsg = Done | Do of string | ParseErr
-type replymsg = No of string | Yes of string
-
-let parse_request buf =
-  match String.split_on_char '|' buf with
-  | "DONE"::[] -> Done
-  | "Do"::act::[] -> Do act
-  | _ -> ParseErr
-
-let rec handle_messages sock = 
-  let reply sockaddr str =
-    let buf = Bytes.of_string str in
-    sendto sock buf 0 (Bytes.length buf) [] sockaddr
-  in
-  let buf = Bytes.create 1024
-  in
-  let r = tryhandle (fun () -> recvfrom sock buf 0 1024 [])
-  in
-  match r with
-  | Ok (_len, (ADDR_UNIX (_s) as sockaddr)) ->
-     let buf = Bytes.to_string buf in
-     begin match parse_request buf with
-     | Done -> close sock
-     | ParseErr -> assert false
-     | Do act ->
-        match parse_action act |> Option.map handle_action |> Option.to_result ~none:"" |> Result.join with
-        | Ok res -> let _ = generate_reply res |> reply sockaddr in handle_messages sock
-        | Error _ -> assert false
-     end
-  | Error _ -> 
-     let _ = Log.fatal "Error in interprocess communication" in close sock
-  | Ok _ -> assert false
+let parse_and_respond buf =
+  let resultant = parse_action buf |> Option.map handle_action |> Option.to_result ~none:"" |> Result.join in
+  match resultant with
+  | Ok res -> Ok (generate_reply res)
+  | Error err -> Error err
 
 let () =
-  let sockname = "test" in
-  let sock = socket ?cloexec:(Some false) PF_UNIX SOCK_DGRAM 0 in
-  let serveraddr = (ADDR_UNIX sockname) in
-  let _ = bind sock serveraddr in ()
+  Log.set_log_level Log.INFO;
+  Log.color_on();
+  Log.set_output stderr;
+
+  Interop.handle_messages parse_and_respond

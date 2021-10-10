@@ -1,47 +1,80 @@
-Each property in every level specify the parameters used by the
-program. As soon as the action relative to each level is completed,
-the program will add a sublevel "Result" with a table. Text inside
-levels is ignored. As such please don't name levels "Result"
+This is the input and outputfile for *ffbench*. The program only
+validates the /FFBENCH/ level and inner levels to that tree, so you
+are free to write in other sections.
+The FFBENCH level must have this structure:
+- FFBENCH (the title of the root level to the program)
+  + Source
+  + Transcoding Parameters
+  + Destination
+  + Scores
+Every level has certain properties that constitute the program
+settings. They are validated at startup: the program halts in case of
+errors during the validation steps.
+Every property of a level three or greater will be merged with the
+properties of the previous level.
+
+When a section is validated and produces some output from the program,
+the output will be written as a table in a level 3 titled /Result/.
 
 When the program is resumed, it will validate each result table
 against the properties of the level. It will resume to do work against
 the section that has different properties from the result table or in
 which the result table is absent.
-* Source
+
+To recap:
+- this file serves as input and output to ffbench
+- it has a rigid structure: dump an example file using the switch
+  --example
+- org-properties are used to configure the behaviour of the program
+- properties in sublevels will be merged: beware of name clashes
+- the result of the computation of each level will be written as a
+  table in /Result/ sublevel
+- the program will do its best to avoid repeating previous work
+
+* FFBENCH
+** Source
 :PROPERTIES:
 :nsamples: 3
 :duration: 5
-:inputfile: input.mkv
+:originalfile: big.mkv
 :sourcefile: source.mkv
 :END:
-* Trancoding Parameters 
+The program takes the original file big.mkv and divides it into
+/nsamples/ long /duration/ each. Those samples are concatenated into
+/sourcefile/. If possible it will try to skip the beginning and the
+ending of the file, while in the case that the original file is too
+short, it will copy it to /sourcefile/ unchanged.
+** Transcoding Parameters 
 :PROPERTIES:
 :scale: original
 :rencodewithsrc: yes
 :END:
+The program will transcode the /sourcefile/ into different output
+files.
+
 The scale property can have one of the following values: 1080, 720,
 original (leave as it is). The rencodewithsrc parameters allows to
 transcode the source file with the original transcoding setting. This
 parameter is ignored when scale=original.
 
-The program also parses sublevels. You can specify many trascoding
-parameters per level, the name of the property is ignored.
-** Default HEVC
+This example file uses sublevels to group trancoding parameters into
+categories.
+*** Default HEVC
 :PROPERTIES:
 :gh:    -crf 15 -codec:v libx265 -preset slow
 :gm:    -crf 18 -codec:v libx265 -preset slow
 :gl:    -crf 21 -codec:v libx265 -preset slow
 :END:
 Default hevc transcoding settings.
-** Grainy Movie Presets
+*** Grainy Movie Presets
 :PROPERTIES:
-:ch:    -crf 15 -codec:v libx265 -tune grain -preset slow
-:cm:    -crf 18 -codec:v libx265 -tune grain -preset slow
-:cl:    -crf 21 -codec:v libx265 -tune grain -preset slow
+:mh:    -crf 15 -codec:v libx265 -tune grain -preset slow
+:mm:    -crf 18 -codec:v libx265 -tune grain -preset slow
+:ml:    -crf 21 -codec:v libx265 -tune grain -preset slow
 :END:
 Uses --tune. This should be used for material that is already grainy.
 Here, the grain won't be filtered out as much.
-** Cartoon Presets
+*** Cartoon Presets
 :PROPERTIES:
 :ch:    -crf 15 -codec:v libx265 -tune animation -preset slow
 :cm:    -crf 18 -codec:v libx265 -tune animation -preset slow
@@ -49,18 +82,18 @@ Here, the grain won't be filtered out as much.
 :END:
 Uses --tune. Intended for cartoons, where deblocking is boosted to
 compensate for larger, flat areas. More reference frames are used.
-** Anime Presets
+*** Anime Presets
 :PROPERTIES:
-:gh:    -crf=18 -x265-params "limit-sao:bframes=8:psy-rd=1:aq-mode=3" -preset slow
-:gm:    -crf=19 -x265-params "limit-sao:bframes=8:psy-rd=1:aq-mode=3" -preset slow
-:gl:    -crf=20 -x265-params "limit-sao:bframes=8:psy-rd=1:aq-mode=3" -preset slow
-:fh:    -crf=18 -x265-params "bframes=8:psy-rd=1:aq-mode=3:aq-strength=0.8:deblock=1,1" -preset slow
-:fl:    -crf=20 -x265-params "bframes=8:psy-rd=1:aq-mode=3:aq-strength=0.8:deblock=1,1" -preset slow
-:dh:    -crf=18 "limit-sao:bframes=8:psy-rd=1.5:psy-rdoq=2:aq-mode=3" -preset slow
-:dm:    -crf=19 "limit-sao:bframes=8:psy-rd=1.5:psy-rdoq=2:aq-mode=3" -preset slow
-:dl:    -crf=20  -x265-params "bframes=8:psy-rd=1:psy-rdoq=1:aq-mode=3:qcomp=0.8" -preset slow
-:mh:    -crf=16 -x265-params "no-sao:bframes=8:psy-rd=1.5:psy-rdoq=4:aq-mode=3:ref=6" -preset slow
-:ml:    -crf=18 -x265-params "no-sao:bframes=8:psy-rd=1.5:psy-rdoq=4:aq-mode=3:ref=6" -preset slow
+:gh_a:    -crf=18 -x265-params "limit-sao:bframes=8:psy-rd=1:aq-mode=3" -preset slow
+:gm_a:    -crf=19 -x265-params "limit-sao:bframes=8:psy-rd=1:aq-mode=3" -preset slow
+:gl_a:    -crf=20 -x265-params "limit-sao:bframes=8:psy-rd=1:aq-mode=3" -preset slow
+:fh_a:    -crf=18 -x265-params "bframes=8:psy-rd=1:aq-mode=3:aq-strength=0.8:deblock=1,1" -preset slow
+:fl_a:    -crf=20 -x265-params "bframes=8:psy-rd=1:aq-mode=3:aq-strength=0.8:deblock=1,1" -preset slow
+:dh_a:    -crf=18 "limit-sao:bframes=8:psy-rd=1.5:psy-rdoq=2:aq-mode=3" -preset slow
+:dm_a:    -crf=19 "limit-sao:bframes=8:psy-rd=1.5:psy-rdoq=2:aq-mode=3" -preset slow
+:dl_a:    -crf=20  -x265-params "bframes=8:psy-rd=1:psy-rdoq=1:aq-mode=3:qcomp=0.8" -preset slow
+:mh_a:    -crf=16 -x265-params "no-sao:bframes=8:psy-rd=1.5:psy-rdoq=4:aq-mode=3:ref=6" -preset slow
+:ml_a:    -crf=18 -x265-params "no-sao:bframes=8:psy-rd=1.5:psy-rdoq=4:aq-mode=3:ref=6" -preset slow
 :END:
 - gh: general purpose preset that should be good in many situations
 - gm: same but medium quality
@@ -74,5 +107,4 @@ compensate for larger, flat areas. More reference frames are used.
   motion and lower fx
 - mh: movie-tier anime with many dark scenes, complex and grainy details
 - ml: same but lower quality
-* Destination
-* Scores
+** Scores
