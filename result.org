@@ -1,0 +1,78 @@
+Each property in every level specify the parameters used by the
+program. As soon as the action relative to each level is completed,
+the program will add a sublevel "Result" with a table. Text inside
+levels is ignored. As such please don't name levels "Result"
+
+When the program is resumed, it will validate each result table
+against the properties of the level. It will resume to do work against
+the section that has different properties from the result table or in
+which the result table is absent.
+* Source
+:PROPERTIES:
+:nsamples: 3
+:duration: 5
+:inputfile: input.mkv
+:sourcefile: source.mkv
+:END:
+* Trancoding Parameters 
+:PROPERTIES:
+:scale: original
+:rencodewithsrc: yes
+:END:
+The scale property can have one of the following values: 1080, 720,
+original (leave as it is). The rencodewithsrc parameters allows to
+transcode the source file with the original transcoding setting. This
+parameter is ignored when scale=original.
+
+The program also parses sublevels. You can specify many trascoding
+parameters per level, the name of the property is ignored.
+** Default HEVC
+:PROPERTIES:
+:gh:    -crf 15 -codec:v libx265 -preset slow
+:gm:    -crf 18 -codec:v libx265 -preset slow
+:gl:    -crf 21 -codec:v libx265 -preset slow
+:END:
+Default hevc transcoding settings.
+** Grainy Movie Presets
+:PROPERTIES:
+:ch:    -crf 15 -codec:v libx265 -tune grain -preset slow
+:cm:    -crf 18 -codec:v libx265 -tune grain -preset slow
+:cl:    -crf 21 -codec:v libx265 -tune grain -preset slow
+:END:
+Uses --tune. This should be used for material that is already grainy.
+Here, the grain won't be filtered out as much.
+** Cartoon Presets
+:PROPERTIES:
+:ch:    -crf 15 -codec:v libx265 -tune animation -preset slow
+:cm:    -crf 18 -codec:v libx265 -tune animation -preset slow
+:cl:    -crf 21 -codec:v libx265 -tune animation -preset slow
+:END:
+Uses --tune. Intended for cartoons, where deblocking is boosted to
+compensate for larger, flat areas. More reference frames are used.
+** Anime Presets
+:PROPERTIES:
+:gh:    -crf=18 -x265-params "limit-sao:bframes=8:psy-rd=1:aq-mode=3" -preset slow
+:gm:    -crf=19 -x265-params "limit-sao:bframes=8:psy-rd=1:aq-mode=3" -preset slow
+:gl:    -crf=20 -x265-params "limit-sao:bframes=8:psy-rd=1:aq-mode=3" -preset slow
+:fh:    -crf=18 -x265-params "bframes=8:psy-rd=1:aq-mode=3:aq-strength=0.8:deblock=1,1" -preset slow
+:fl:    -crf=20 -x265-params "bframes=8:psy-rd=1:aq-mode=3:aq-strength=0.8:deblock=1,1" -preset slow
+:dh:    -crf=18 "limit-sao:bframes=8:psy-rd=1.5:psy-rdoq=2:aq-mode=3" -preset slow
+:dm:    -crf=19 "limit-sao:bframes=8:psy-rd=1.5:psy-rdoq=2:aq-mode=3" -preset slow
+:dl:    -crf=20  -x265-params "bframes=8:psy-rd=1:psy-rdoq=1:aq-mode=3:qcomp=0.8" -preset slow
+:mh:    -crf=16 -x265-params "no-sao:bframes=8:psy-rd=1.5:psy-rdoq=4:aq-mode=3:ref=6" -preset slow
+:ml:    -crf=18 -x265-params "no-sao:bframes=8:psy-rd=1.5:psy-rdoq=4:aq-mode=3:ref=6" -preset slow
+:END:
+- gh: general purpose preset that should be good in many situations
+- gm: same but medium quality
+- gl: same but lower quality
+- fh: preset for flat and well lit anime like slice of life genre
+- fl: same but lower quality
+- dh: use this in anime with many dark scenes, battle scene and good
+  motion and special effects
+- dm: same but lower quality
+- dl: similar to the previous one but for anime with less complex
+  motion and lower fx
+- mh: movie-tier anime with many dark scenes, complex and grainy details
+- ml: same but lower quality
+* Destination
+* Scores
