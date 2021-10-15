@@ -45,7 +45,8 @@ type action =
   | MakeSnapshots of inputfile (* Take nsamples from input file *)
   | MakeSource of (string list * string) (* Concatenate previous samples into a single file *)
   | MakeDst of dstfile (* Transcode source into a new file using one of the many parameters *)
-  | ScoreDst of string (* Generate scores for the destination file specified *)
+  | ScoreDst of (string * string * string) (* source, rencoded, logfile: Generate scores for the destination file specified in the logfile *)
+  | AnalyzeScore of string (* compute ffmpeg_result from logfile *)
 
 (* Very stupid communication protocol, semicolon divided *)
 let parse_action buf =
@@ -53,7 +54,8 @@ let parse_action buf =
   | "PARAMS"::fname::[] -> ComputeOriginalParams fname |> Option.some
   | "MAKESRC"::src::samples -> MakeSource (samples, src) |> Option.some
   | "MAKEDST"::src::dst::params::[] -> MakeDst { name=dst; src=src; params=params } |> Option.some
-  | "SCORE"::fname::[] -> ScoreDst fname |> Option.some
+  | "COMPSCORE"::src::dst::logfile::[] -> ScoreDst (src, dst, logfile) |> Option.some
+  | "SCORE"::logfile::[] -> AnalyzeScore logfile |> Option.some
   | "SNAPSHOTS"::fname::nsamples::sampleduration::[] ->
      begin match (int_of_string_opt nsamples, int_of_string_opt sampleduration) with
      | Some n, Some d -> MakeSnapshots { name=fname; nsamples=n; sampleduration=d } |> Option.some
@@ -66,7 +68,8 @@ type resultant = (* string * string = filename, md5sum *)
   | Snapshots of (string * string) list
   | MakeSource of (string * string)
   | MakeDst of (string * string)
-  | ScoreDst of (string * string * ffmpeg_result)
+  | ScoreDst of (string * string)
+  | AnalyzeScore of (string * string * ffmpeg_result)
 
 let score_to_string_list s =
   ["mean"; string_of_float s.mean;
@@ -79,13 +82,13 @@ let generate_reply = function
   | OriginalParams (fname, hash, params) -> String.concat ";" ["PARAMS"; fname; hash; params]
   | MakeSource (fname, hash) -> String.concat ";" ["MAKESRC"; fname; hash]
   | MakeDst (fname, hash) -> String.concat ";" ["MAKEDST"; fname; hash]
-  | ScoreDst (logname, hash, fr) ->
-     ["PARAMS"; logname; hash; fr.name; string_of_int fr.size; fr.parameters;]@(score_to_string_list fr.score)
+  | AnalyzeScore (logname, hash, fr) ->
+     ["SCORE"; logname; hash; fr.name; string_of_int fr.size; fr.parameters;]@(score_to_string_list fr.score)
      |> String.concat ";" 
   | Snapshots lst ->
      let lst = List.map (fun (f, h) -> f^";"^h) lst |> String.concat ";" in
      "SNAPSHOTS"^lst
-    
+  | ScoreDst (logfile, hash) -> String.concat ";" ["COMPSCORE"; logfile; hash]
 
 let run cmd =
   let timeout_1h = "timeout 1h "
@@ -181,21 +184,15 @@ let transcode_file src dst params =
   | Ok _ -> Ok dst
   | Error _ -> Error ("failed encode for: "^dst)
 
-let score_result_filename mkv = "ssim_logfile_"^mkv^".txt"
 
-let score_files src files =
-  let score_file file =
-    let score_logfile = score_result_filename file
-    in
-    let cmd = "ffmpeg -i "^src^" -i "^file^" -lavfi ssim=stats_file="^score_logfile^" -f null -"
-    in
-    let _ = Log.info "Computing score using: %s" cmd
-    in
-    match run cmd with
-    | Ok _ -> Ok score_logfile
-    | Error _ -> Error ("failed encode for: "^file)
+let score_file src file logfile =
+  let cmd = "ffmpeg -i "^src^" -i "^file^" -lavfi ssim=stats_file="^logfile^" -f null -"
   in
-  List.map score_file files |> result_list_to_result
+  let _ = Log.info "Computing score using: %s" cmd
+  in
+  match run cmd with
+  | Ok _ -> Ok logfile
+  | Error _ -> Error ("failed encode for: "^file)
 
 let compute_file_score logname =
   let file_to_list filename =
@@ -270,9 +267,10 @@ let handle_action = function
      | Ok dst -> assoc_hash dst |> Result.map (fun t -> MakeDst t)
      | Error err -> Error err
      end
-  | ScoreDst logfile ->
+  | ScoreDst (src, dst, logfile) -> score_file src dst logfile |> Result.map assoc_hash |> Result.join |> Result.map (fun lh -> ScoreDst lh)
+  | AnalyzeScore logfile ->
      match compute_file_score logfile with
-     | Ok ffmpeg_result -> assoc_hash logfile |> Result.map (fun t -> ScoreDst (fst t, snd t, ffmpeg_result))
+     | Ok ffmpeg_result -> assoc_hash logfile |> Result.map (fun t -> AnalyzeScore (fst t, snd t, ffmpeg_result))
      | Error exn -> Printexc.to_string exn |> Result.error
 
 let parse_and_respond buf =
